@@ -1,0 +1,75 @@
+from netmiko import ConnectHandler
+from getpass import getpass
+import ipaddress
+
+# 1. Get switch credentials dynamically
+host = input("Switch IP: ").strip()
+username = input("SSH username: ").strip()
+password = getpass("SSH password: ")
+
+# 2. Get VLAN, interface, and SVI details
+vlan_id = int(input("Enter VLAN ID: "))
+port = input("Enter interface name: ").strip()
+svi_ip = input("Enter SVI gateway IP: ").strip()
+subnet_mask = input("Enter subnet mask: ").strip()
+
+# 3. Validate input
+if not 1 <= vlan_id <= 4094:
+    raise ValueError("Invalid VLAN ID")
+
+ipaddress.IPv4Address(host)
+ipaddress.IPv4Address(svi_ip)
+mask = ipaddress.IPv4Address(subnet_mask)
+
+if not port:
+    raise ValueError("Interface name cannot be empty")
+
+# 4. Configure switch connection
+switch = {
+    "device_type": "cisco_s300",  # Verify driver for your model
+    "host": host,
+    "username": username,
+    "password": password,
+}
+
+net_connect = None
+
+try:
+    net_connect = ConnectHandler(**switch)
+    print("Connected:", repr(net_connect.find_prompt()))
+
+    # 5. Create VLAN
+    vlan_commands = [
+        f"vlan {vlan_id}",
+        "exit"
+    ]
+    print(net_connect.send_config_set(vlan_commands))
+
+    # 6. Assign interface to VLAN
+    port_commands = [
+        f"interface {port}",
+        "switchport mode access",
+        f"switchport access vlan {vlan_id}",
+        "no shutdown",
+        "exit"
+    ]
+    print(net_connect.send_config_set(port_commands))
+
+    # 7. Create SVI and assign gateway IP
+    svi_commands = [
+        f"interface vlan {vlan_id}",
+        f"ip address {svi_ip} {subnet_mask}",
+        "no shutdown",
+        "exit"
+    ]
+    print(net_connect.send_config_set(svi_commands))
+
+    # 8. Verify configuration
+    print(net_connect.send_command_timing("show vlan"))
+    print(net_connect.send_command_timing("show ip interface"))
+
+finally:
+    if net_connect is not None:
+        net_connect.disconnect()
+        print("Disconnected")
+
